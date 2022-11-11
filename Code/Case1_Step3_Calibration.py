@@ -14,21 +14,20 @@ class get_data:
     
     def get_useful_data(self, flow_raw, occupancy_raw, speed_raw, lanes_raw, distance_raw, 
                         start_location_index, end_location_index, start_time_index, end_time_index):
-        
+
         flow = flow_raw.iloc[start_location_index:end_location_index, start_time_index:end_time_index]
         speed = speed_raw.iloc[start_location_index:end_location_index, start_time_index:end_time_index]
         occupancy = occupancy_raw.iloc[start_location_index:end_location_index, start_time_index:end_time_index]
         density = self.calculate_density_with_occupancy(occupancy)
         lanes = lanes_raw.iloc[start_location_index:end_location_index, ]
         distance = distance_raw.iloc[start_location_index:end_location_index, ]
-        
+
         return flow, density, speed, lanes, distance
     
     def calculate_density_with_occupancy(self, occupancy):
         # see Eq. (7.2) on page 193 in May, A.D., 1990. Traffic flow fundamentals. Prentice Hall, Inc., New Jersey.
         L = 25
-        density = 5280/L*occupancy
-        return density
+        return 5280/L*occupancy
     
     def get_ObsCumulativeDepartureCurve(self, flow, bottleneck_downstream_location_index, start_time_index, end_time_index):
         obsCumulativeDeparture = flow.iloc[bottleneck_downstream_location_index, start_time_index:end_time_index]
@@ -45,8 +44,7 @@ class get_data:
                 else:
                     density.iloc[i,j] = density.iloc[i,j] - critical_density
                 obsQueueTemp.iloc[i,j] = density.iloc[i,j]*lanes.iloc[i,1]*distance.iloc[i,0]
-        obsQueue = np.sum(obsQueueTemp, 0)    # note that this is the physical queue length
-        return obsQueue
+        return np.sum(obsQueueTemp, 0)
     
     def get_ObsDealy(self, speed, distance, v_f):
         travel_time_temp = speed*0
@@ -55,8 +53,7 @@ class get_data:
                 travel_time_temp.iloc[i,j] = distance.iloc[i,0]/speed.iloc[i,j]*60    # unit: minute
         travel_time = np.sum(travel_time_temp, 0)
         fftt = np.sum(distance,0)/v_f*60    # unit: minute
-        obsDealy = travel_time - np.array(fftt)
-        return obsDealy
+        return travel_time - np.array(fftt)
 
 class Adam_optimization():
     
@@ -73,8 +70,8 @@ class Adam_optimization():
     
     def adam(self):
         # keep track of solutions and scores
-        solutions = list()
-        scores = list()
+        solutions = []
+        scores = []
         # generate an initial point
         x = list(self.x0)
         score = self.objective(x)
@@ -142,7 +139,7 @@ class BayesianOptimization():
         self.epsilon = epsilon
     
     def expected_improvement(self, x, gaussian_process, evaluated_loss, greater_is_better=True, n_params=2):
-        
+
         x_to_predict = x.reshape(-1, n_params)
         mean, sigma = gaussian_process.predict(x_to_predict, return_std=True)
         if greater_is_better:
@@ -158,22 +155,22 @@ class BayesianOptimization():
         return -1 * expected_improvement
         
     def sample_next_hyperparameter(self, acquisition_func, gaussian_process, evaluated_loss, bounds, n_restarts, greater_is_better=True):
-        
+
         best_x = None
         best_acquisition_value = 1
         n_params = bounds.shape[0]
         for starting_point in np.random.uniform(bounds[:, 0], bounds[:, 1], size=(n_restarts, n_params)):
-            
+
             res = minimize(fun=acquisition_func,
                            x0=starting_point.reshape(1, -1),
                            bounds=bounds,
                            method='SLSQP',
                            args=(gaussian_process, evaluated_loss, greater_is_better, n_params))
-            
+
             if res.fun < best_acquisition_value:
                 best_acquisition_value = res.fun
                 best_x = res.x
-        
+
         return best_x
         
     def bayesian_optimization(self):
@@ -181,7 +178,7 @@ class BayesianOptimization():
         x_list = []
         y_list = []
         n_params = self.bounds.shape[0]
-        
+
         if self.x0 is None:
             for params in np.random.uniform(self.bounds[:, 0], self.bounds[:, 1], (self.n_pre_samples, self.bounds.shape[0])):
                 x_list.append(params)
@@ -190,18 +187,18 @@ class BayesianOptimization():
             for params in self.x0:
                 x_list.append(params)
                 y_list.append(self.obj_fun(params))
-        
+
         xp = np.array(x_list)
         yp = np.array(y_list)
-        
+
         # Create the GP
         if self.gp_params is not None:
             model = gp.GaussianProcessRegressor(**self.gp_params)
         else:
             kernel = gp.kernels.Matern()
             model = gp.GaussianProcessRegressor(kernel=kernel, alpha=self.alpha, n_restarts_optimizer=10, normalize_y=True, random_state=1)
-            
-        for n in range(self.max_iters):
+
+        for _ in range(self.max_iters):
             model.fit(xp, yp)
             # Sample next hyperparameter
             if self.random_search:
@@ -210,22 +207,22 @@ class BayesianOptimization():
                 next_sample = x_random[np.argmax(ei), :]
             else:
                 next_sample = self.sample_next_hyperparameter(self.expected_improvement, model, yp, bounds=self.bounds, n_restarts=100, greater_is_better=True)
-                
+
             # Duplicates will break the GP. In case of a duplicate, we will randomly sample a next query point.
             if np.any(np.abs(next_sample - xp) <= self.epsilon):
                 next_sample = np.random.uniform(self.bounds[:, 0], self.bounds[:, 1], self.bounds.shape[0])
-                
+
             # Sample loss for new set of parameters
             cv_score = self.obj_fun(next_sample)
-    
+
             # Update lists
             x_list.append(next_sample)
             y_list.append(cv_score)
-    
+
             # Update xp and yp
             xp = np.array(x_list)
             yp = np.array(y_list)
-    
+
         return xp, yp
     
 class solver():
@@ -254,9 +251,7 @@ class solver():
         self.t = np.linspace(t0, t3, num=len(self.obsQueue))
         
     def get_mu(self):
-        # Since mu is assumed to be a constant and it is bounded at t0 and t3, we can calculate it by the mean of the obsCumulativeDeparture during the congestion period.
-        mu = self.obsCumulativeDeparture[-1]/len(self.obsCumulativeDeparture)*12
-        return mu
+        return self.obsCumulativeDeparture[-1]/len(self.obsCumulativeDeparture)*12
     
     def get_obsQueue(self):
         return self.obsQueue
@@ -270,14 +265,12 @@ class solver():
     
     def get_physical_queue(self, x):
         virtual_queue = self.get_virtual_queue(x)
-        physical_queue = 1/self.factor_virQueue2phyQueue*virtual_queue
-        return physical_queue
+        return 1/self.factor_virQueue2phyQueue*virtual_queue
     
     def get_delay(self, x):
         mu = self.get_mu()
         virtual_queue = self.get_virtual_queue(x)
-        delay = virtual_queue/mu
-        return delay
+        return virtual_queue/mu
     
     def virtual_queue_first_order_derivative(self, x, t):
         gamma, m = x
@@ -294,13 +287,11 @@ class solver():
     
     def physical_queue_first_order_derivative(self, x, t):
         virtual_queue_first_order_derivative = self.virtual_queue_first_order_derivative(x, t)
-        physical_queue_first_order_derivative = 1/self.factor_virQueue2phyQueue * virtual_queue_first_order_derivative
-        return physical_queue_first_order_derivative
+        return 1/self.factor_virQueue2phyQueue * virtual_queue_first_order_derivative
     
     def physical_queue_second_order_derivative(self, x, t):
         virtual_queue_second_order_derivative = self.virtual_queue_second_order_derivative(x, t)
-        physical_queue_second_order_derivative = 1/self.factor_virQueue2phyQueue * virtual_queue_second_order_derivative
-        return physical_queue_second_order_derivative
+        return 1/self.factor_virQueue2phyQueue * virtual_queue_second_order_derivative
     
     def Z_first_order_derivative(self, x):
         Z_first_order_derivative_sum = np.asarray([0., 0.])
@@ -329,8 +320,7 @@ class solver():
         # theoretical values
         for i in range(len(self.obsCumulativeDeparture)):
             Q_t[i] = 1/self.factor_virQueue2phyQueue*gamma*(self.t[i] - self.t0)**2*(0.25*(self.t[i] - self.t0)**2 - 1/3*((3-4*m)/(4-6*m)+m)*(self.t3 - self.t0)*(self.t[i] - self.t0) + 1/2*(3 - 4*m)*m/(4 - 6*m)*((self.t3 - self.t0)**2))
-        obj_fun = np.sum((Q_t - self.obsQueue)**2)
-        return obj_fun
+        return np.sum((Q_t - self.obsQueue)**2)
     
     def constraint1(self, x):
         mu = self.get_mu()
@@ -338,23 +328,19 @@ class solver():
         m = x[1]
         t2 = self.t0 + m*(self.t3 - self.t0)
         t_bar = self.t0 + (3 - 4*m)*(self.t3 - self.t0)/(4 - 6*m)
-        inflow_rate = gamma*(self.t - self.t0)*(self.t - t2)*(self.t - t_bar) + mu
-        return inflow_rate
+        return gamma*(self.t - self.t0)*(self.t - t2)*(self.t - t_bar) + mu
     
     def bounds(self):
-        bounds = np.asarray([[1, 20], [0.5, 0.666]])  # lower and upper bounds for gamma and m
-        return bounds
+        return np.asarray([[1, 20], [0.5, 0.666]])
     
     def initial_value(self):
-        x0 = np.asarray([10.0, 0.58])
-        return x0
+        return np.asarray([10.0, 0.58])
     
     def multiple_initial_values(self):
         bounds = self.bounds()
         gamma_list = list(np.repeat(np.linspace(bounds[0, 0], bounds[0, 1], num=5, endpoint=True), 5))
         m_list = list(np.linspace(bounds[1, 0], bounds[1, 1], num=5, endpoint=True))*5
-        multiple_x0 = list(zip([gamma for gamma in gamma_list], [m for m in m_list]))
-        return multiple_x0
+        return list(zip(list(gamma_list), list(m_list)))
     
     def calibration_with_newton(self):
         x0 = self.initial_value()
@@ -427,7 +413,7 @@ class solver():
         bounds = self.bounds()
         gamma_list = list(np.repeat(np.linspace(bounds[0, 0], bounds[0, 1], num=5, endpoint=True), 5))
         m_list = list(np.linspace(bounds[1, 0], bounds[1, 1], num=5, endpoint=True))*5
-        x0 = list(zip([gamma for gamma in gamma_list], [m for m in m_list]))
+        x0 = list(zip(list(gamma_list), list(m_list)))
         bo = BayesianOptimization(max_iters, obj_fun, bounds, x0)
         solutions, scores = bo.bayesian_optimization()
         gamma = solutions[np.argmin(scores)][0]
@@ -440,8 +426,21 @@ class solver():
         fig = plt.figure()
         plt.plot(self.t, self.obsCumulativeDeparture,'b:', linewidth = 2, label = 'Observed values')
         plt.plot(self.t, mu*(self.t - self.t0 + 1/12), 'r-', linewidth = 3, label = 'Calibrated values')
-        plt.xticks([13+i for i in range(0,8)], 
-                    labels=['13:00','14:00','15:00','16:00','17:00','18:00','19:00','20:00'], fontsize=10)
+        plt.xticks(
+            [13 + i for i in range(8)],
+            labels=[
+                '13:00',
+                '14:00',
+                '15:00',
+                '16:00',
+                '17:00',
+                '18:00',
+                '19:00',
+                '20:00',
+            ],
+            fontsize=10,
+        )
+
         plt.xlabel('Time')
         plt.ylabel('Cumulative number of vehicles')
         plt.legend(loc=0)
@@ -454,8 +453,21 @@ class solver():
         inflow_rate = gamma*(self.t - self.t0)*(self.t - self.t0 - m*(self.t3 - self.t0))*(self.t - self.t0 - (3-4*m)*(self.t3 - self.t0)/(4 - 6*m)) + mu
         plt.plot(self.t, inflow_rate/self.num_of_lanes_at_bottleneck, 'r-', linewidth=3, label = 'Inflow rate')
         plt.hlines(mu/self.num_of_lanes_at_bottleneck, self.t0, self.t3, colors = 'b', linestyles = 'dashed', linewidth=2, label = '$\mu$')
-        plt.xticks([13+i for i in range(0,8)], 
-                    labels=['13:00','14:00','15:00','16:00','17:00','18:00','19:00','20:00'], fontsize=10)
+        plt.xticks(
+            [13 + i for i in range(8)],
+            labels=[
+                '13:00',
+                '14:00',
+                '15:00',
+                '16:00',
+                '17:00',
+                '18:00',
+                '19:00',
+                '20:00',
+            ],
+            fontsize=10,
+        )
+
         plt.ylabel('Number of vehicles (per hour per lane)', fontsize=12)
         plt.ylim((700, 1150))
         plt.legend(loc=0)
@@ -468,8 +480,21 @@ class solver():
         calPhyQueue = 1/self.factor_virQueue2phyQueue*gamma*(self.t - self.t0)**2*(0.25*(self.t - self.t0)**2 - 1/3*((3-4*m)/(4-6*m) + m)*(self.t3 - self.t0)*(self.t - self.t0) + 1/2*(3-4*m)*m/(4-6*m)*((self.t3 - self.t0)**2))
         plt.scatter(self.t, self.obsQueue, s = 2, marker='o', c='b', edgecolors='b', label='Observed queue')
         plt.plot(self.t, calPhyQueue, 'r-', linewidth=3, label = 'Calibrated physical queue length')
-        plt.xticks([13+i for i in range(0,8)], 
-                    labels=['13:00','14:00','15:00','16:00','17:00','18:00','19:00','20:00'], fontsize=10)
+        plt.xticks(
+            [13 + i for i in range(8)],
+            labels=[
+                '13:00',
+                '14:00',
+                '15:00',
+                '16:00',
+                '17:00',
+                '18:00',
+                '19:00',
+                '20:00',
+            ],
+            fontsize=10,
+        )
+
         plt.ylabel('Number of vehicles', fontsize=12)
         plt.legend(loc=2)
         plt.title('Calibration results of the queue length', fontsize=16)
@@ -481,8 +506,21 @@ class solver():
         calDelay = 60*(1/mu*gamma*(self.t - self.t0)**2*(0.25*(self.t - self.t0)**2 - 1/3*((3-4*m)/(4-6*m)+m)*(self.t3-self.t0)*(self.t-self.t0) + 1/2*(3-4*m)*m/(4-6*m)*((self.t3-self.t0)**2))) # unit: minute
         plt.scatter(self.t, self.obsDelay, s = 2, marker='o', c='b', edgecolors='b', label='Observed delay')
         plt.plot(self.t, calDelay, 'r-', linewidth=3, label = 'Calibrated delay')
-        plt.xticks([13+i for i in range(0,8)], 
-                    labels=['13:00','14:00','15:00','16:00','17:00','18:00','19:00','20:00'], fontsize=10)
+        plt.xticks(
+            [13 + i for i in range(8)],
+            labels=[
+                '13:00',
+                '14:00',
+                '15:00',
+                '16:00',
+                '17:00',
+                '18:00',
+                '19:00',
+                '20:00',
+            ],
+            fontsize=10,
+        )
+
         plt.xlabel('Time')
         plt.ylabel('Delay time (min)')
         plt.legend(loc=0)
@@ -495,8 +533,21 @@ class solver():
         downstream_flow = flow_raw_cpoy.iloc[self.start_location_index-1, self.start_time_index:self.end_time_index]
         plt.scatter(self.t, 12/self.num_of_lanes_at_bottleneck*downstream_flow, s = 2, marker='o', c='b', edgecolors='b', label='Observed volume')
         plt.hlines(mu/self.num_of_lanes_at_bottleneck, self.t0, self.t3, colors = 'r', linewidth=3, label = '$\mu$')
-        plt.xticks([13+i for i in range(0,8)], 
-                    labels=['13:00','14:00','15:00','16:00','17:00','18:00','19:00','20:00'], fontsize=10)
+        plt.xticks(
+            [13 + i for i in range(8)],
+            labels=[
+                '13:00',
+                '14:00',
+                '15:00',
+                '16:00',
+                '17:00',
+                '18:00',
+                '19:00',
+                '20:00',
+            ],
+            fontsize=10,
+        )
+
         plt.ylabel('Volume (per hour per lane)', fontsize=12)
         plt.ylim((600, 1400))
         plt.legend(loc=0)
@@ -517,19 +568,21 @@ class get_metrics():
         return MSE, MAE, R2
     
     def relative_error(self, y_pred, y_true):
-        relative_error = abs((y_pred-y_true)/y_true)
-        return relative_error
+        return abs((y_pred-y_true)/y_true)
 
 if __name__ == '__main__':
     
     # input data
     dataset_dir = '../Dataset/Dataset 1/'
-    flow_raw = pd.read_csv(dataset_dir+'flow.csv', index_col=0, header=0)
-    flow_raw_copy = pd.read_csv(dataset_dir+'flow.csv', index_col=0, header=0)
-    speed_raw = pd.read_csv(dataset_dir+'speed.csv', index_col=0, header=0)
-    occupancy_raw = pd.read_csv(dataset_dir+'occupancy.csv', index_col=0, header=0)
-    distance_raw = pd.read_csv(dataset_dir+'distance.csv')
-    lanes_raw = pd.read_csv(dataset_dir+'lanes.csv', header=0)
+    flow_raw = pd.read_csv(f'{dataset_dir}flow.csv', index_col=0, header=0)
+    flow_raw_copy = pd.read_csv(f'{dataset_dir}flow.csv', index_col=0, header=0)
+    speed_raw = pd.read_csv(f'{dataset_dir}speed.csv', index_col=0, header=0)
+    occupancy_raw = pd.read_csv(
+        f'{dataset_dir}occupancy.csv', index_col=0, header=0
+    )
+
+    distance_raw = pd.read_csv(f'{dataset_dir}distance.csv')
+    lanes_raw = pd.read_csv(f'{dataset_dir}lanes.csv', header=0)
     num_of_lanes_at_bottleneck = 4
     critical_occupancy = 0.13   # critical occupancy, which is observed from the flow vs occupancy plot in the data prepare process
     t0 = 10+38/12   # t0=13:10:00, observed from the queue profile generated from step 1
@@ -623,9 +676,9 @@ if __name__ == '__main__':
     MSE, MAE, R2 = metrics.metrics()
     relative_error = metrics.relative_error(obj, 409795)
     print('\nCalibration results with multi-start Adam: ')
-    print('Discharge rate = {} veh/h'.format(int(round(mu, 2))))
-    print('Shape parameter = {} veh/(h^4)'.format(round(gamma, 3)))
-    print('Oversaturation factor = {}'.format(round(m, 3)))
+    print(f'Discharge rate = {int(round(mu, 2))} veh/h')
+    print(f'Shape parameter = {round(gamma, 3)} veh/(h^4)')
+    print(f'Oversaturation factor = {round(m, 3)}')
     print('MSE = {:.3f}, MAE = {:.3f}, R2 = {:.3f}'.format(MSE, MAE, R2))
     print('Relative error = {:.3f}'.format(relative_error))
     # Plot results

@@ -18,21 +18,20 @@ class get_data:
     
     def get_useful_data(self, flow_raw, occupancy_raw, speed_raw, lanes_raw, distance_raw, 
                         start_location_index, end_location_index, start_time_index, end_time_index):
-        
+
         flow = flow_raw.iloc[start_location_index:end_location_index, start_time_index:end_time_index]
         speed = speed_raw.iloc[start_location_index:end_location_index, start_time_index:end_time_index]
         occupancy = occupancy_raw.iloc[start_location_index:end_location_index, start_time_index:end_time_index]
         density = self.calculate_density_with_occupancy(occupancy)
         lanes = lanes_raw.iloc[start_location_index:end_location_index, ]
         distance = distance_raw.iloc[start_location_index:end_location_index, ]
-        
+
         return flow, density, speed, lanes, distance
     
     def calculate_density_with_occupancy(self, occupancy):
         # see Eq. (7.2) on page 193 in May, A.D., 1990. Traffic flow fundamentals. Prentice Hall, Inc., New Jersey.
         L = 25
-        density = 5280/L*occupancy
-        return density
+        return 5280/L*occupancy
     
     def get_ObsCumulativeDepartureCurve(self, flow, bottleneck_downstream_location_index, start_time_index, end_time_index):
         obsCumulativeDeparture = flow.iloc[bottleneck_downstream_location_index, start_time_index:end_time_index]
@@ -49,8 +48,7 @@ class get_data:
                 else:
                     density.iloc[i,j] = density.iloc[i,j] - critical_density
                 obsQueueTemp.iloc[i,j] = density.iloc[i,j]*lanes.iloc[i,1]*distance.iloc[i,0]
-        obsQueue = np.sum(obsQueueTemp, 0)    # note that this is the physical queue length
-        return obsQueue
+        return np.sum(obsQueueTemp, 0)
     
     def get_ObsDealy(self, speed, distance, v_f):
         travel_time_temp = speed*0
@@ -59,18 +57,20 @@ class get_data:
                 travel_time_temp.iloc[i,j] = distance.iloc[i,0]/speed.iloc[i,j]*60    # unit: minute
         travel_time = np.sum(travel_time_temp, 0)
         fftt = np.sum(distance,0)/v_f*60    # unit: minute
-        obsDealy = travel_time - np.array(fftt)
-        return obsDealy
+        return travel_time - np.array(fftt)
 
 
 # input data
 dataset_dir = '../Dataset/Dataset 1/'
-flow_raw = pd.read_csv(dataset_dir+'flow.csv', index_col=0, header=0)
-flow_raw_copy = pd.read_csv(dataset_dir+'flow.csv', index_col=0, header=0)
-speed_raw = pd.read_csv(dataset_dir+'speed.csv', index_col=0, header=0)
-occupancy_raw = pd.read_csv(dataset_dir+'occupancy.csv', index_col=0, header=0)
-distance_raw = pd.read_csv(dataset_dir+'distance.csv')
-lanes_raw = pd.read_csv(dataset_dir+'lanes.csv', header=0)
+flow_raw = pd.read_csv(f'{dataset_dir}flow.csv', index_col=0, header=0)
+flow_raw_copy = pd.read_csv(f'{dataset_dir}flow.csv', index_col=0, header=0)
+speed_raw = pd.read_csv(f'{dataset_dir}speed.csv', index_col=0, header=0)
+occupancy_raw = pd.read_csv(
+    f'{dataset_dir}occupancy.csv', index_col=0, header=0
+)
+
+distance_raw = pd.read_csv(f'{dataset_dir}distance.csv')
+lanes_raw = pd.read_csv(f'{dataset_dir}lanes.csv', header=0)
 num_of_lanes_at_bottleneck = 4
 critical_occupancy = 0.13   # critical occupancy, which is observed from the flow vs occupancy plot in the data prepare process
 t0 = 10+38/12   # t0=13:10:00, observed from the queue profile generated from step 1
@@ -102,8 +102,7 @@ def cubic_model_Q(x):
     for i in range(len(obsCumulativeDeparture)):
         Q_t[i] = 1/factor_virQueue2phyQueue*gamma*(t[i] - t0)**2*(0.25*(t[i] - t0)**2 - 1/3*((3-4*m)/(4-6*m)+m)*(t3 - t0)*(t[i] - t0) + 1/2*(3 - 4*m)*m/(4 - 6*m)*((t3 - t0)**2))
 
-    obj_fun = np.sum((Q_t - obsQueue)**2)
-    return obj_fun
+    return np.sum((Q_t - obsQueue)**2)
 
 def plot_grid_search_contourf(gamma, m, fun_value):
     GAMMA, M = np.meshgrid(gamma, m)
@@ -136,8 +135,8 @@ if __name__ == '__main__':
     
     gamma_list = list(np.repeat(np.linspace(1, 20, num=2001, endpoint=True), 167))
     m_list = list(np.linspace(0.5, 0.666, num=167, endpoint=True))*2001
-    parameter_pairs = list(zip([gamma for gamma in gamma_list], [m for m in m_list]))
-    
+    parameter_pairs = list(zip(list(gamma_list), list(m_list)))
+
     ts = time.time()
     fun_value = main(parameter_pairs)
     np.save('../Dataset/Dataset 1//Grid search value.npy', fun_value)
@@ -145,7 +144,7 @@ if __name__ == '__main__':
     print('Time = %0.2f seconds' % (time.time()-ts))
     print('Minimal objective value = ', min(fun_value))
     print('Parameters = ', parameter_pairs[np.argmin(fun_value)])
-    
+
     gamma = np.linspace(1, 20, num=2001, endpoint=True)
     m = np.linspace(0.5, 0.666, num=167, endpoint=True)
     # fun_value = np.load('../Dataset/Dataset 1//Grid search value.npy', allow_pickle=True)

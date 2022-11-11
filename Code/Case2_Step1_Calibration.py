@@ -27,8 +27,8 @@ class Adam_optimization():
     
     def adam(self):
         # keep track of solutions and scores
-        solutions = list()
-        scores = list()
+        solutions = []
+        scores = []
         # generate an initial point
         x = list(self.x0)
         score = self.objective(x)
@@ -85,7 +85,7 @@ class Adam_optimization():
 class solver():
     
     def __init__(self, dataset_dir):
-        
+
         # Bottleneck location observed from speed data: 23 (35974)
         # t0 = 07:00:00, t_bar = 08:54:59
         # Only single bottleneck (location 23)，during the congestion period
@@ -104,7 +104,7 @@ class solver():
         self.time_1 = np.linspace(self.t0_1, self.t_bar_1, num=int((self.t_bar_1 - self.t0_1)*12) + 1)  # for the delay calibration of the first bottleneck
         self.time_2 = np.linspace(self.t0_2, self.t3_2, num=int((self.t3_2 - self.t0_2)*12))            # for the delay calibration of the second bottleneck
         self.num_of_lanes_at_bottleneck = 2
-        
+
         # Load raw data
         # Flow data is obtained from RTMS, while speed data is from probe vehicles.
         self.flow_raw = pd.read_csv(dataset_dir + 'rtms_volume_0608_8027c.csv', index_col=0, header=0)
@@ -113,7 +113,7 @@ class solver():
         self.rtms_dict = pd.read_excel(dataset_dir + 'rtms_dictionary.xlsx')
         self.probe_veh_distance_raw = self.probe_veh_dict[['Length']]
         self.probe_veh_distance_raw = self.probe_veh_distance_raw.sort_index()
-        
+
         self.flow = self.flow_raw.iloc[self.rtms_time_start:self.rtms_time_end, :]
         self.speed = self.speed_raw.iloc[self.probe_veh_location_start:self.probe_veh_location_end, self.probe_veh_time_start:self.probe_veh_time_end]
         self.distance = self.probe_veh_distance_raw.iloc[self.probe_veh_location_start:self.probe_veh_location_end,:]
@@ -157,8 +157,8 @@ class solver():
         return w_t
     
     def get_metrics(self, x):
-        y_true = self.get_ObsDelay()[0:len(self.time_1)]
-        y_pred = self.get_theoreticalDelay(x)[0:len(self.time_1)]
+        y_true = self.get_ObsDelay()[:len(self.time_1)]
+        y_pred = self.get_theoreticalDelay(x)[:len(self.time_1)]
         MSE = mean_squared_error(y_true, y_pred)
         MAE = mean_absolute_error(y_true, y_pred)
         R2 = r2_score(y_true, y_pred)
@@ -168,10 +168,8 @@ class solver():
         
         obsDelay = self.get_ObsDelay()
         w_t = self.get_theoreticalDelay(x)
-        
-        obj_fun = np.sum((w_t - obsDelay)**2)
-        
-        return obj_fun
+
+        return np.sum((w_t - obsDelay)**2)
     
     def constraint1(self, x):  # inflow should be positive
         mu = self.get_mu()
@@ -191,26 +189,24 @@ class solver():
         bnds_t2_1 = [self.t0_1, self.t_bar_1]
         bnds_t2_2 = [self.t0_2, self.t3_2]
         bnds_t_bar_2 = [self.t3_2, t_bar_2]
-        bnds = np.asarray([bnds_gamma_1, bnds_gamma_2, bnds_t2_1, bnds_t2_2, bnds_t_bar_2])
-        return bnds
+        return np.asarray(
+            [bnds_gamma_1, bnds_gamma_2, bnds_t2_1, bnds_t2_2, bnds_t_bar_2]
+        )
     
     def initial_value(self):
-        x0 = np.array([1126., 90., 7.8, 9.7, 11.2])
-        return x0
+        return np.array([1126., 90., 7.8, 9.7, 11.2])
     
     def multiple_initial_values(self):
         first_col = np.array([20*i for i in range(1,100)]).reshape((99,1))
         other_cols = np.array([90., 7.8, 9.7, 11.2]).reshape((1,4))
         other_cols = np.tile(other_cols, (99,1))
-        multiple_x0 = np.hstack((first_col, other_cols))
-        return multiple_x0
+        return np.hstack((first_col, other_cols))
         
     def multiple_initial_values2(self):
-        first_col = np.array([1110+i for i in range(0,20)]).reshape((20,1))
+        first_col = np.array([1110+i for i in range(20)]).reshape((20, 1))
         other_cols = np.array([90., 7.8, 9.7, 11.2]).reshape((1,4))
         other_cols = np.tile(other_cols, (20,1))
-        multiple_x0 = np.hstack((first_col, other_cols))
-        return multiple_x0
+        return np.hstack((first_col, other_cols))
         
     def delay_first_order_derivative(self, x, t):
         mu = self.get_mu()
@@ -260,8 +256,7 @@ class solver():
         return gamma_1, gamma_2, t2_1, t2_2, t_bar_2, obj
     
     def get_m_1(self, t2_1):
-        m_1 = (t2_1 - self.t0_1)/(self.t_bar_1 - self.t0_1)
-        return m_1
+        return (t2_1 - self.t0_1)/(self.t_bar_1 - self.t0_1)
         
     def plot_InflowRate(self, mu, gamma_1, t2_1):
         # Plot inflow rate
@@ -270,8 +265,22 @@ class solver():
         inflow_rate = gamma_1*(t - self.t0_1)*(t - t2_1)*(t - self.t_bar_1) + mu
         plt.plot(t, inflow_rate/self.num_of_lanes_at_bottleneck, 'r-', linewidth=3, label = 'Inflow rate')
         plt.hlines(mu/self.num_of_lanes_at_bottleneck, self.t0_1, self.t_bar_1, colors = 'b', linestyles = 'dashed', linewidth=2, label = '$\mu$')
-        plt.xticks([7+0.25*i for i in range(0,9)], 
-                    labels=['07:00','07:15','07:30','07:45','08:00','08:15','08:30','08:45','09:00'], fontsize=10)
+        plt.xticks(
+            [7 + 0.25 * i for i in range(9)],
+            labels=[
+                '07:00',
+                '07:15',
+                '07:30',
+                '07:45',
+                '08:00',
+                '08:15',
+                '08:30',
+                '08:45',
+                '09:00',
+            ],
+            fontsize=10,
+        )
+
         plt.ylabel('Number of vehicles (per hour per lane)', fontsize=12)
         plt.ylim((700, 1150))
         plt.legend(loc=0)
@@ -283,10 +292,40 @@ class solver():
         fig = plt.figure()
         obsDelay = self.get_ObsDelay()
         theoreticalDelay = self.get_theoreticalDelay(x)
-        plt.scatter(self.time_1, obsDelay.iloc[0:len(self.time_1)], s = 2, marker='o', c='b', edgecolors='b', label='Observed delay')
-        plt.plot(self.time_1, theoreticalDelay[0:len(self.time_1)], 'r-', linewidth=3, label = 'Calibrated delay')
-        plt.xticks([7+0.25*i for i in range(0,9)], 
-                    labels=['07:00','07:15','07:30','07:45','08:00','08:15','08:30','08:45','09:00'], fontsize=10)
+        plt.scatter(
+            self.time_1,
+            obsDelay.iloc[: len(self.time_1)],
+            s=2,
+            marker='o',
+            c='b',
+            edgecolors='b',
+            label='Observed delay',
+        )
+
+        plt.plot(
+            self.time_1,
+            theoreticalDelay[: len(self.time_1)],
+            'r-',
+            linewidth=3,
+            label='Calibrated delay',
+        )
+
+        plt.xticks(
+            [7 + 0.25 * i for i in range(9)],
+            labels=[
+                '07:00',
+                '07:15',
+                '07:30',
+                '07:45',
+                '08:00',
+                '08:15',
+                '08:30',
+                '08:45',
+                '09:00',
+            ],
+            fontsize=10,
+        )
+
         plt.ylabel('Delay time (min)', fontsize=12)
         plt.legend(loc=0)
         plt.title('Calibration results of the delay time', fontsize=16)
@@ -299,8 +338,22 @@ class solver():
         t = np.linspace(self.t0_1, self.t_bar_1, num=len(downstream_flow))
         plt.scatter(t, downstream_flow, s = 2, marker='o', c='b', edgecolors='b', label='Observed volume')
         plt.hlines(mu/self.num_of_lanes_at_bottleneck, self.t0_1, self.t_bar_1, colors = 'r', linewidth=3, label = '$\mu$')
-        plt.xticks([7+0.25*i for i in range(0,9)], 
-                    labels=['07:00','07:15','07:30','07:45','08:00','08:15','08:30','08:45','09:00'], fontsize=10)
+        plt.xticks(
+            [7 + 0.25 * i for i in range(9)],
+            labels=[
+                '07:00',
+                '07:15',
+                '07:30',
+                '07:45',
+                '08:00',
+                '08:15',
+                '08:30',
+                '08:45',
+                '09:00',
+            ],
+            fontsize=10,
+        )
+
         plt.ylabel('Volume (per hour per lane)', fontsize=12)
         plt.ylim((600, 1400))
         plt.legend(loc=0)

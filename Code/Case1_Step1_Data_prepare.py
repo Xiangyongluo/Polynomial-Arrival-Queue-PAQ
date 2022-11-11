@@ -206,15 +206,15 @@ if __name__ == '__main__':
     speed_raw = data.load_speed()
     occupancy_raw = data.load_occupancy()
     flow, speed, occupancy = data.average_the_data(flow_raw, speed_raw, occupancy_raw)
-    
+
     # Save data
-    flow.to_csv(dataset_dir + 'flow.csv')
-    speed.to_csv(dataset_dir + 'speed.csv')
-    occupancy.to_csv(dataset_dir + 'occupancy.csv')
-    flow_raw['# Lane Points'].iloc[0:22].to_csv(dataset_dir + 'lanes.csv')
+    flow.to_csv(f'{dataset_dir}flow.csv')
+    speed.to_csv(f'{dataset_dir}speed.csv')
+    occupancy.to_csv(f'{dataset_dir}occupancy.csv')
+    flow_raw['# Lane Points'].iloc[:22].to_csv(f'{dataset_dir}lanes.csv')
     distance = get_distance(flow)
-    np.savetxt(dataset_dir + 'distance.csv', distance, delimiter = ',')
-    
+    np.savetxt(f'{dataset_dir}distance.csv', distance, delimiter = ',')
+
     # Plot the data
     plot_data = plot_data(flow, speed, occupancy)
     plot_data.plot_queue_profile()
